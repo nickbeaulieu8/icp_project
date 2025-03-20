@@ -1,0 +1,183 @@
+---
+title: "icp_lossfunction_v1"
+format: pdf
+editor: visual
+---
+$$ \mathcal L = \frac{1}{2} \left[\log(\sigma^2) + {\frac {(y-\mu)^{2}}{\sigma^{2}}}\right] $$
+$$ \mathcal L = \log(2 \alpha)  + \left( {\frac {|y-\mu|}{\alpha}} \right)^{\beta} $$
+
+
+``` {r}
+library(RTMB)
+library(mgcv)
+library(scales)
+
+# Load the CSV into a data frame
+cps_data <- read.csv("../data/cps_clean_v3.csv", stringsAsFactors = FALSE)
+
+# Subset the data to keep the key variables including INCZERO_ONE and INCZERO_TWO
+raw_data <- cps_data[, c("INCLOG_DELTA", "INCTOT", "INCLOG", "INCPER", "AGE", "EDUC", "HEALTH", "SEX", "INCZERO_ONE", "INCZERO_TWO")]
+
+# Filter out rows where either INCZERO_ONE or INCZERO_TWO equals 1 (negligible income, will be dealt with separately)
+data <- raw_data[raw_data$INCZERO_ONE != 1 & raw_data$INCZERO_TWO != 1, ]
+
+# View the first few rows to confirm the subset and filtering
+head(raw_data)
+```
+
+```{r}
+# Assume 'data' is already loaded and filtered as in the previous code.
+# Compute the thin plate regression spline basis for INCLOG (k = 3)
+sc <- smoothCon(s(INCLOG, bs = "tp", k = 4), data = data)[[1]]
+X <- sc$X                 # Basis matrix for the smooth term
+S <- sc$S[[1]]            # Corresponding penalty matrix
+p <- ncol(X)
+
+# Define the negative log-likelihood function for the GAM.
+# The likelihood term is based on the generalized normal distribution with beta fixed at 0.9.
+# The linear predictor is: mu = beta0 + X %*% gamma,
+# and we add a penalty term: 0.5 * lambda * t(gamma) %*% S %*% gamma,
+# where lambda = exp(log_lambda) ensures a positive smoothing parameter.
+nll_gam <- function(pars) {
+  pars |> RTMB::getAll()
+  
+  # Response variable
+  y <- data$INCLOG_DELTA |> RTMB::OBS()
+  
+  # Linear predictor using the spline basis with an intercept
+  mu <- beta0 + as.vector(X %*% gamma)
+  
+  # Scale parameter for the likelihood, ensuring positiveness
+  alpha <- exp(log_alpha)
+  
+  # Fixed shape parameter for the generalized normal likelihood
+  beta_val <- 0.89
+  
+  # Data likelihood contribution (generalized normal loss)
+  nll_val <- sum(log(2 * alpha) + (abs(y - mu) / alpha)^beta_val)
+  
+  # Spline penalty: exp(log_lambda) is lambda, the smoothing parameter.
+  penalty <- 0.5 * exp(log_lambda) * as.numeric(t(gamma) %*% S %*% gamma)
+  
+  return(nll_val + penalty)
+}
+
+# Set starting values for model parameters:
+# beta0: intercept; gamma: vector of spline coefficients; log_alpha: scale; log_lambda: smoothing parameter.
+pars_gam <- list(
+  beta0 = 0,
+  gamma = rep(0, p),
+  log_alpha = 0,
+  log_lambda = 0
+)
+
+# Create the automated differentiation function.
+obj_gam <- RTMB::MakeADFun(nll_gam, pars_gam, silent = TRUE)
+
+# Optimize the negative log-likelihood.
+opt_gam <- with(obj_gam, nlminb(par, fn, gr))
+print(opt_gam)
+
+# Calculate standard errors and obtain a summary of parameter estimates.
+sdr_gam <- RTMB::sdreport(obj_gam, opt_gam$par)
+print(sdr_gam)
+
+# Extract fitted parameter values.
+params_fit <- obj_gam$env$parList()
+
+# Fitted values based on the estimated intercept and spline coefficients.
+fitted_mu <- params_fit$beta0 + as.vector(X %*% params_fit$gamma)
+
+# Plot the observed data and overlay the fitted smooth.
+plot(data$INCLOG, data$INCLOG_DELTA,
+     main = "GAM with Generalized Normal Likelihood (beta = 1)",
+     xlab = "INCLOG", ylab = "INCLOG_DELTA", 
+     col = rgb(0, 0, 0, 0.2))
+ord <- order(data$INCLOG)
+lines(data$INCLOG[ord], fitted_mu[ord], col = "blue", lwd = 2)
+```
+
+```{r}
+# Extract fitted parameters from the RTMB model (GLM example)
+params_fit <- obj$env$parList()
+beta0_hat <- params_fit$beta0
+beta1_hat <- params_fit$beta1
+alpha_hat <- exp(params_fit$log_alpha)
+
+# Compute the fitted linear predictor
+fitted_mu <- beta0_hat + beta1_hat * data$INCLOG
+
+# (1) Q-Q Plot for standardized residuals based on the assumed model
+# Standardized residuals: these should follow a generalized normal with fixed beta = 0.9.
+std_resid <- (data$INCLOG_DELTA - fitted_mu) / alpha_hat
+
+# Define the CDF of a standardized generalized normal distribution with fixed beta.
+pgennorm <- function(x, beta) {
+  s <- 1 / beta
+  ifelse(x >= 0,
+         0.5 + 0.5 * pgamma(x^beta, shape = s, lower.tail = TRUE),
+         0.5 - 0.5 * pgamma(abs(x)^beta, shape = s, lower.tail = TRUE))
+}
+
+# Define the quantile function by inverting the CDF numerically.
+qgennorm <- function(p, beta) {
+  sapply(p, function(prob) {
+    uniroot(function(x) pgennorm(x, beta) - prob,
+            lower = -100, upper = 100)$root
+  })
+}
+
+n <- length(std_resid)
+p_seq <- ((1:n) - 0.5) / n
+theor_q <- qgennorm(p_seq, beta = 0.89)
+
+qqplot(theor_q, sort(std_resid),
+       main = "Q-Q Plot of Standardized Residuals\n(Generalized Normal, β = 0.9)",
+       xlab = "Theoretical Quantiles", ylab = "Observed Quantiles")
+abline(0, 1, col = "red", lwd = 2)
+
+
+# Histogram with Fitted Generalized Normal Curve
+r <- data$INCLOG_DELTA - fitted_mu
+
+# Define the negative log-likelihood for a generalized normal distribution.
+# The pdf is: f(x) = (β/(2αΓ(1/β))) * exp( - (|x-μ|/α)^β )
+# so nll = n*log(2α) + n*log(Γ(1/β)) - n*log(β) + sum((|x-μ|/α)^β)
+nll_resid <- function(par) {
+  mu_est <- par[1]              # location parameter for residuals
+  alpha_est <- exp(par[2])      # scale (positive)
+  beta_est <- exp(par[3])       # shape (positive)
+  n <- length(r)
+  nll_val <- n * log(2 * alpha_est) +
+             n * log(gamma(1 / beta_est)) -
+             n * log(beta_est) +
+             sum((abs(r - mu_est) / alpha_est)^beta_est)
+  return(nll_val)
+}
+
+# Use optimization to fit the parameters.
+init_par <- c(mu = 0, log_alpha = log(sd(r)), log_beta = 0)
+fit <- optim(init_par, nll_resid, method = "BFGS")
+fit_par <- fit$par
+mu_fit <- fit_par[1]
+alpha_fit <- exp(fit_par[2])
+beta_fit <- exp(fit_par[3])
+
+# Define the fitted density of the generalized normal distribution.
+dgnorm <- function(x, mu, alpha, beta) {
+  (beta / (2 * alpha * gamma(1 / beta))) *
+    exp( - (abs(x - mu) / alpha)^beta )
+}
+
+# Plot the histogram of residuals and overlay the fitted density curve.
+hist(r, probability = TRUE, breaks = 101, 
+     main = "Histogram of Residuals with Fitted Generalized Normal Curve",
+     xlab = "Residuals", col = "lightgray", border = "white")
+x_seq <- seq(min(r), max(r), length.out = 200)
+lines(x_seq, dgnorm(x_seq, mu_fit, alpha_fit, beta_fit),
+      col = "red", lwd = 2)
+legend("topright",
+       legend = sprintf("Fitted parameters:\nμ = %.2f\nα = %.2f\nβ = %.2f",
+                        mu_fit, alpha_fit, beta_fit),
+       bty = "n", col = "red", lwd = 2)
+```
