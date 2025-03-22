@@ -3,6 +3,7 @@ title: "icp_additive_v1"
 format: pdf
 editor: visual
 ---
+
 ```{r}
 # Libraries
 library(mgcv)
@@ -10,7 +11,7 @@ library(ggplot2)
 library(fitdistrplus)
 ```
 
-``` {r}
+```{r}
 # Load the CSV into a data frame
 cps_data <- read.csv("../data/cps_clean_v3.csv", stringsAsFactors = FALSE)
 
@@ -24,13 +25,13 @@ data <- raw_data[raw_data$INCZERO_ONE != 1 & raw_data$INCZERO_TWO != 1, ]
 head(raw_data)
 ```
 
-``` {r}
+```{r}
 # Take a random sample of 10% of the data for plotting
 set.seed(123)  # for reproducibility
 data_sample <- data[sample(seq_len(nrow(data)), size = round(nrow(data)*0.1)), ]
 ```
 
-``` {r}
+```{r}
 ## THIS CELL IS WHAT NEEDS TO BE TRIED AND ADJUSTED WITH VARIOUS FEATURES, bs AND k (AND MAYBE OTHER PARAMETERS) IN THE s FUNCTION NEED TO BE OPTIMIZED (k SHOULD BE SMALL TO MINIMIZE COMPUTATIONAL REQUIREMENTS, k-index SHOULD BE AROUND 1, AIC SHOULD BE MINIMIZED)
 
 # Fit the GAM using a thin plate regression spline (default "tp")
@@ -38,7 +39,7 @@ gam_fit <- gam(INCLOG_DELTA ~ s(INCLOG, bs = "tp", k = 3), data = data)
 pred_var <- "INCLOG"  #when you change the prediction variable above, also change it here
 
 #Information about fit, visualization (like q-q plot) can be generated below
-# summary(gam_fit)
+summary(gam_fit)
 AIC(gam_fit)
 k.check(gam_fit, subsample = 10000, n.rep=1000)
 ```
@@ -100,3 +101,186 @@ plot(sample_lp, sample_resid,
      xlab = "Linear Predictor", ylab = "Residuals")
 abline(h = 0)
 ```
+```{r}
+# Fit the GAM for AGE using a thin plate regression spline (default "tp")
+gam_fit_age <- gam(INCLOG_DELTA ~ s(AGE, bs = "tp", k = 5), data = data)
+pred_var <- "AGE"  #when you change the prediction variable above, also change it here
+
+#Information about fit, visualization (like q-q plot) can be generated below
+summary(gam_fit_age)
+AIC(gam_fit_age)
+k.check(gam_fit_age, subsample = 10000, n.rep=1000)
+```
+
+```{r}
+# Create a grid for predictions over the range of the chosen predictor from the full dataset
+new_data <- data.frame(seq(min(data[[pred_var]], na.rm = TRUE),
+                           max(data[[pred_var]], na.rm = TRUE),
+                           length.out = 100))
+names(new_data)[1] <- pred_var
+new_data$pred <- predict(gam_fit_age, newdata = new_data)
+
+# Compute sample residuals: observed minus predicted for the sample set
+sample_pred <- predict(gam_fit_age, newdata = data_sample)
+sample_resid <- data_sample$INCLOG_DELTA - sample_pred
+
+# Fit Laplace parameters using the sample residuals.
+# The Laplace density: f(x; mu, b) = 1/(2b)*exp(-|x-mu|/b)
+# The MLE for mu is the median; for b, we use the mean absolute deviation.
+laplace_mu <- median(sample_resid)
+laplace_b <- mean(abs(sample_resid - laplace_mu))
+
+# For the Q-Q plot: sort sample residuals and compute theoretical quantiles based on Laplace
+sample_resid_sorted <- sort(sample_resid)
+n <- length(sample_resid_sorted)
+theoretical_probs <- ppoints(n)  # Generates n probability points in (0,1)
+theo_quantiles_laplace <- qlaplace(theoretical_probs, mu = laplace_mu, b = laplace_b)
+
+# Compute the sample linear predictor (for residuals vs linear predictor plot)
+sample_lp <- predict(gam_fit_age, newdata = data_sample, type = "link")
+
+# Plot 1: GAM fitted curve with 10% sample of data
+plot(data_sample[[pred_var]], data_sample$INCLOG_DELTA,
+     main = paste("GAM Fitted Curve (10% Sample) based on", pred_var),
+     xlab = pred_var, ylab = "INCLOG_DELTA")
+lines(new_data[[pred_var]], new_data$pred, col = "blue", lwd = 2)
+
+# Plot 2: Laplace Q-Q plot of sample residuals
+plot(theo_quantiles_laplace, sample_resid_sorted,
+     main = "Laplace Q-Q Plot",
+     xlab = "Theoretical Quantiles", ylab = "Sample Quantiles")
+abline(0, 1, col = "blue")
+
+# Plot 3: Histogram of the sample residuals
+hist(sample_resid, breaks = 30,
+     main = "Histogram of Residuals", xlab = "Residuals")
+
+# Plot 4: Residuals vs. Linear Predictor for the sample observations
+plot(sample_lp, sample_resid,
+     main = "Residuals vs Linear Predictor",
+     xlab = "Linear Predictor", ylab = "Residuals")
+abline(h = 0)
+```
+
+```{r}
+# Fit the GAM for EDUC using a thin plate regression spline (default "tp")
+gam_fit_educ <- gam(INCLOG_DELTA ~ s(EDUC, bs = "tp", k = 5), data = data)
+pred_var <- "EDUC"  #when you change the prediction variable above, also change it here
+
+#Information about fit, visualization (like q-q plot) can be generated below
+summary(gam_fit_educ)
+AIC(gam_fit_educ)
+k.check(gam_fit_educ, subsample = 10000, n.rep=1000)
+```
+
+```{r}
+# Create a grid for predictions over the range of the chosen predictor from the full dataset
+new_data <- data.frame(seq(min(data[[pred_var]], na.rm = TRUE),
+                           max(data[[pred_var]], na.rm = TRUE),
+                           length.out = 100))
+names(new_data)[1] <- pred_var
+new_data$pred <- predict(gam_fit_educ, newdata = new_data)
+
+# Compute sample residuals: observed minus predicted for the sample set
+sample_pred <- predict(gam_fit_educ, newdata = data_sample)
+sample_resid <- data_sample$INCLOG_DELTA - sample_pred
+
+# Fit Laplace parameters using the sample residuals.
+# The Laplace density: f(x; mu, b) = 1/(2b)*exp(-|x-mu|/b)
+# The MLE for mu is the median; for b, we use the mean absolute deviation.
+laplace_mu <- median(sample_resid)
+laplace_b <- mean(abs(sample_resid - laplace_mu))
+
+# For the Q-Q plot: sort sample residuals and compute theoretical quantiles based on Laplace
+sample_resid_sorted <- sort(sample_resid)
+n <- length(sample_resid_sorted)
+theoretical_probs <- ppoints(n)  # Generates n probability points in (0,1)
+theo_quantiles_laplace <- qlaplace(theoretical_probs, mu = laplace_mu, b = laplace_b)
+
+# Compute the sample linear predictor (for residuals vs linear predictor plot)
+sample_lp <- predict(gam_fit_educ, newdata = data_sample, type = "link")
+
+# Plot 1: GAM fitted curve with 10% sample of data
+plot(data_sample[[pred_var]], data_sample$INCLOG_DELTA,
+     main = paste("GAM Fitted Curve (10% Sample) based on", pred_var),
+     xlab = pred_var, ylab = "INCLOG_DELTA")
+lines(new_data[[pred_var]], new_data$pred, col = "blue", lwd = 2)
+
+# Plot 2: Laplace Q-Q plot of sample residuals
+plot(theo_quantiles_laplace, sample_resid_sorted,
+     main = "Laplace Q-Q Plot",
+     xlab = "Theoretical Quantiles", ylab = "Sample Quantiles")
+abline(0, 1, col = "blue")
+
+# Plot 3: Histogram of the sample residuals
+hist(sample_resid, breaks = 30,
+     main = "Histogram of Residuals", xlab = "Residuals")
+
+# Plot 4: Residuals vs. Linear Predictor for the sample observations
+plot(sample_lp, sample_resid,
+     main = "Residuals vs Linear Predictor",
+     xlab = "Linear Predictor", ylab = "Residuals")
+abline(h = 0)
+```
+
+```{r}
+# Fit the GAM for HEALTH using a thin plate regression spline (default "tp")
+gam_fit_health <- gam(INCLOG_DELTA ~ s(HEALTH, bs = "tp", k = 3), data = data)
+pred_var <- "HEALTH"  #when you change the prediction variable above, also change it here
+
+#Information about fit, visualization (like q-q plot) can be generated below
+summary(gam_fit_health)
+AIC(gam_fit_health)
+k.check(gam_fit_health, subsample = 10000, n.rep=1000)
+```
+
+```{r}
+# Create a grid for predictions over the range of the chosen predictor from the full dataset
+new_data <- data.frame(seq(min(data[[pred_var]], na.rm = TRUE),
+                           max(data[[pred_var]], na.rm = TRUE),
+                           length.out = 100))
+names(new_data)[1] <- pred_var
+new_data$pred <- predict(gam_fit_health, newdata = new_data)
+
+# Compute sample residuals: observed minus predicted for the sample set
+sample_pred <- predict(gam_fit_health, newdata = data_sample)
+sample_resid <- data_sample$INCLOG_DELTA - sample_pred
+
+# Fit Laplace parameters using the sample residuals.
+# The Laplace density: f(x; mu, b) = 1/(2b)*exp(-|x-mu|/b)
+# The MLE for mu is the median; for b, we use the mean absolute deviation.
+laplace_mu <- median(sample_resid)
+laplace_b <- mean(abs(sample_resid - laplace_mu))
+
+# For the Q-Q plot: sort sample residuals and compute theoretical quantiles based on Laplace
+sample_resid_sorted <- sort(sample_resid)
+n <- length(sample_resid_sorted)
+theoretical_probs <- ppoints(n)  # Generates n probability points in (0,1)
+theo_quantiles_laplace <- qlaplace(theoretical_probs, mu = laplace_mu, b = laplace_b)
+
+# Compute the sample linear predictor (for residuals vs linear predictor plot)
+sample_lp <- predict(gam_fit_health, newdata = data_sample, type = "link")
+
+# Plot 1: GAM fitted curve with 10% sample of data
+plot(data_sample[[pred_var]], data_sample$INCLOG_DELTA,
+     main = paste("GAM Fitted Curve (10% Sample) based on", pred_var),
+     xlab = pred_var, ylab = "INCLOG_DELTA")
+lines(new_data[[pred_var]], new_data$pred, col = "blue", lwd = 2)
+
+# Plot 2: Laplace Q-Q plot of sample residuals
+plot(theo_quantiles_laplace, sample_resid_sorted,
+     main = "Laplace Q-Q Plot",
+     xlab = "Theoretical Quantiles", ylab = "Sample Quantiles")
+abline(0, 1, col = "blue")
+
+# Plot 3: Histogram of the sample residuals
+hist(sample_resid, breaks = 30,
+     main = "Histogram of Residuals", xlab = "Residuals")
+
+# Plot 4: Residuals vs. Linear Predictor for the sample observations
+plot(sample_lp, sample_resid,
+     main = "Residuals vs Linear Predictor",
+     xlab = "Linear Predictor", ylab = "Residuals")
+abline(h = 0)
+```
+
