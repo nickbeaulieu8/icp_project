@@ -39,7 +39,6 @@ set.seed(123)
 folds <- sample(rep(1:n_folds, length.out = nrow(data_sample)))
 ```
 
-TESTING!!!!!
 
 ```{r}
 # INCLOG
@@ -259,6 +258,8 @@ abline(h = 0)
 ```
 
 EDUCATION (EDUC)
+
+
 ```{r}
 # Fit the GAM for EDUC using a thin plate regression spline (default "tp")
 gam_fit_educ <- gam(INCLOG_DELTA ~ s(EDUC, bs = "tp", k = 5), data = data)
@@ -319,6 +320,10 @@ plot(sample_lp, sample_resid,
      xlab = "Linear Predictor", ylab = "Residuals")
 abline(h = 0)
 ```
+
+
+
+HEALTH:
 
 ```{r}
 # Fit the GAM for HEALTH using a thin plate regression spline (default "tp")
