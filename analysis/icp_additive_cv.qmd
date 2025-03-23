@@ -87,7 +87,7 @@ final_gam_model <- gam(INCLOG_DELTA ~ s(INCLOG, k = best_k), data = data_sample,
 ## THIS CELL IS WHAT NEEDS TO BE TRIED AND ADJUSTED WITH VARIOUS FEATURES, bs AND k (AND MAYBE OTHER PARAMETERS) IN THE s FUNCTION NEED TO BE OPTIMIZED (k SHOULD BE SMALL TO MINIMIZE COMPUTATIONAL REQUIREMENTS, k-index SHOULD BE AROUND 1, AIC SHOULD BE MINIMIZED)
 
 # Fit the GAM using a thin plate regression spline (default "tp")
-gam_fit <- gam(INCLOG_DELTA ~ s(INCLOG, bs = "tp", k = 20), data = data)
+gam_fit <- gam(INCLOG_DELTA ~ s(INCLOG, bs = "tp", k = 10), data = data)
 pred_var <- "INCLOG"  #when you change the prediction variable above, also change it here
 
 #Information about fit, visualization (like q-q plot) can be generated below
@@ -139,7 +139,7 @@ lines(new_data[[pred_var]], new_data$pred, col = "blue", lwd = 2)
 
 # Plot 2: Laplace Q-Q plot of sample residuals
 plot(theo_quantiles_laplace, sample_resid_sorted,
-     main = "Laplace Q-Q Plot",
+     main = "INCLOG Laplace Q-Q Plot",
      xlab = "Theoretical Quantiles", ylab = "Sample Quantiles")
 abline(0, 1, col = "blue")
 
